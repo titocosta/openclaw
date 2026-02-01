@@ -7,10 +7,9 @@ if [ ! -d /data/extensions ]; then
   mkdir -p /data/extensions
 fi
 
-if [ ! -e /data/extensions/http-webhook ]; then
-  echo "Linking http-webhook plugin"
-  ln -s /root/.openclaw/extensions/http-webhook /data/extensions/http-webhook
-fi
+# Always recreate the symlink to ensure it points to the correct location
+echo "Linking http-webhook plugin"
+ln -sf /root/.openclaw/extensions/http-webhook /data/extensions/http-webhook
 
 if [ ! -f /data/openclaw.json ]; then
   echo "Initializing openclaw config"
