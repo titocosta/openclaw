@@ -106,10 +106,9 @@ export type TokenUsageData = {
   daily: TokenUsagePeriod;
 };
 
-// File attachment for outbound messages (supports both URL and base64)
+// File attachment for outbound messages (base64 encoded only)
 export type HttpWebhookFileAttachment = {
-  url?: string;        // Remote URL to the file
-  data?: string;       // Base64 encoded file content
+  data: string;        // Base64 encoded file content
   mediaType: string;   // MIME type (e.g., "image/png", "application/pdf")
   filename?: string;   // Optional filename
 };
@@ -118,8 +117,7 @@ export type HttpWebhookFileAttachment = {
 export type HttpWebhookOutboundMessage = {
   text: string;
   to: string;
-  mediaUrl?: string;                    // Single media URL (legacy, for backwards compatibility)
-  files?: HttpWebhookFileAttachment[];  // Array of file attachments (URL or base64)
+  files?: HttpWebhookFileAttachment[];  // Array of base64 file attachments
   timestamp: number;
   usage?: UsageSummary;
   tokens?: TokenUsageData;

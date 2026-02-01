@@ -600,19 +600,53 @@ async function deliverHttpWebhookReply(params: {
           continue;
         }
 
-        // It's a remote URL, send it
-        await sendHttpWebhookMessage({
-          account,
-          message: {
-            text: payload.text || "",
-            to,
-            mediaUrl,
-            timestamp: Date.now(),
-            usage,
-            tokens,
-          },
-        });
-        statusSink?.({ lastOutboundAt: Date.now() });
+        // It's a remote URL - download and convert to base64
+        try {
+          runtime.log?.(`HTTP webhook: downloading remote URL "${mediaUrl}" to send as base64`);
+          const response = await fetch(mediaUrl);
+          if (!response.ok) {
+            throw new Error(`Failed to fetch: ${response.status} ${response.statusText}`);
+          }
+          const arrayBuffer = await response.arrayBuffer();
+          const base64Data = Buffer.from(arrayBuffer).toString('base64');
+          const contentType = response.headers.get('content-type') || getMimeTypeFromExtension(mediaUrl);
+          const filename = mediaUrl.split('/').pop()?.split('?')[0] || 'file';
+
+          runtime.log?.(`HTTP webhook: sending remote file as base64 (${arrayBuffer.byteLength} bytes, ${contentType})`);
+
+          await sendHttpWebhookMessage({
+            account,
+            message: {
+              text: payload.text || "",
+              to,
+              files: [{
+                data: base64Data,
+                mediaType: contentType,
+                filename,
+              }],
+              timestamp: Date.now(),
+              usage,
+              tokens,
+            },
+          });
+          statusSink?.({ lastOutboundAt: Date.now() });
+        } catch (fetchErr) {
+          runtime.error?.(`HTTP webhook: failed to download remote URL "${mediaUrl}": ${String(fetchErr)}`);
+          // Send text-only message as fallback
+          if (payload.text) {
+            await sendHttpWebhookMessage({
+              account,
+              message: {
+                text: payload.text,
+                to,
+                timestamp: Date.now(),
+                usage,
+                tokens,
+              },
+            });
+            statusSink?.({ lastOutboundAt: Date.now() });
+          }
+        }
       } catch (err) {
         runtime.error?.(`HTTP webhook media send failed: ${String(err)}`);
       }
