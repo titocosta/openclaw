@@ -1,0 +1,11 @@
+{
+  "id": "http-webhook",
+  "channels": [
+    "http-webhook"
+  ],
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  }
+}

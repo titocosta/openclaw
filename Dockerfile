@@ -8,6 +8,13 @@ RUN corepack enable
 
 WORKDIR /app
 
+ARG HTTP_WEBHOOK_INBOUND_TOKEN
+ENV HTTP_WEBHOOK_INBOUND_TOKEN=$HTTP_WEBHOOK_INBOUND_TOKEN
+ARG HTTP_WEBHOOK_OUTBOUND_URL
+ENV HTTP_WEBHOOK_OUTBOUND_URL=$HTTP_WEBHOOK_OUTBOUND_URL
+ARG HTTP_WEBHOOK_OUTBOUND_TOKEN
+ENV HTTP_WEBHOOK_OUTBOUND_TOKEN=$HTTP_WEBHOOK_OUTBOUND_TOKEN
+
 ARG OPENCLAW_DOCKER_APT_PACKAGES=""
 RUN if [ -n "$OPENCLAW_DOCKER_APT_PACKAGES" ]; then \
       apt-get update && \
@@ -31,18 +38,32 @@ RUN pnpm ui:build
 
 ENV NODE_ENV=production
 
+# Install http-webhook plugin
+RUN mkdir -p /app/.openclaw/extensions
+COPY extensions/http-webhook /app/.openclaw/extensions/http-webhook
+RUN cd /app/.openclaw/extensions/http-webhook && npm install --omit=dev
+
+# === Config setup ===
+
+# 1. Bundle default config into image (read-only)
+COPY configs/openclaw.json /defaults/openclaw.json
+
+# 2. Persistent runtime directory (Fly volume mount)
+WORKDIR /data
+VOLUME ["/data"]
+
 # Allow non-root user to write temp files during runtime/tests.
-RUN chown -R node:node /app
+RUN chown -R node:node /app /data /defaults
 
 # Security hardening: Run as non-root user
 # The node:22-bookworm image includes a 'node' user (uid 1000)
-# This reduces the attack surface by preventing container escape via root privileges
 USER node
 
-# Start gateway server with default config.
-# Binds to loopback (127.0.0.1) by default for security.
-#
-# For container platforms requiring external health checks:
-#   1. Set OPENCLAW_GATEWAY_TOKEN or OPENCLAW_GATEWAY_PASSWORD env var
-#   2. Override CMD: ["node","openclaw.mjs","gateway","--allow-unconfigured","--bind","lan"]
-CMD ["node", "openclaw.mjs", "gateway", "--allow-unconfigured"]
+# Set home directory for node user so extensions are found
+ENV HOME=/app
+
+# 3. Entrypoint handles first-boot init
+COPY --chown=node:node entrypoint.sh /entrypoint.sh
+
+# 4. Entrypoint + default command
+ENTRYPOINT ["/entrypoint.sh"]

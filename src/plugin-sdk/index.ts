@@ -248,6 +248,7 @@ export type {
 } from "../infra/diagnostic-events.js";
 export { detectMime, extensionForMime, getFileExtension } from "../media/mime.js";
 export { extractOriginalFilename } from "../media/store.js";
+export { loadProviderUsageSummary } from "../infra/provider-usage.js";
 
 // Channel: Discord
 export {

@@ -1,0 +1,36 @@
+{
+  "name": "@openclaw/http-webhook",
+  "version": "2026.1.26",
+  "type": "module",
+  "description": "OpenClaw HTTP Webhook channel plugin",
+  "openclaw": {
+    "extensions": [
+      "./index.ts"
+    ],
+    "channel": {
+      "id": "http-webhook",
+      "label": "HTTP Webhook",
+      "selectionLabel": "HTTP Webhook",
+      "detailLabel": "HTTP Webhook",
+      "docsPath": "/channels/http-webhook",
+      "docsLabel": "http-webhook",
+      "blurb": "Simple HTTP webhook channel with bearer token authentication.",
+      "aliases": [
+        "webhook",
+        "http"
+      ],
+      "order": 90
+    },
+    "install": {
+      "npmSpec": "@openclaw/http-webhook",
+      "localPath": "extensions/http-webhook",
+      "defaultChoice": "local"
+    }
+  },
+  "dependencies": {
+    "zod": "^3.24.1"
+  },
+  "peerDependencies": {
+    "openclaw": ">=2026.1.24-0"
+  }
+}
