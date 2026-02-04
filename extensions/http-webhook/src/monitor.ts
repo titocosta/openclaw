@@ -735,8 +735,9 @@ export async function startHttpWebhookMonitor(
       return;
     }
 
-    // Validate bearer token
-    const authHeader = req.headers.authorization;
+    // Validate bearer token (check X-EZAIL-Authorization first, then fall back to Authorization)
+    const ezailAuthHeader = req.headers["x-ezail-authorization"] as string | undefined;
+    const authHeader = ezailAuthHeader ?? req.headers.authorization;
     if (!validateBearerToken(authHeader, token)) {
       res.writeHead(401);
       res.end("Unauthorized");

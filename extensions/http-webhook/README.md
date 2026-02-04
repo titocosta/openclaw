@@ -81,8 +81,10 @@ Add the following to your `~/.openclaw/config.json`:
 ```
 
 Required headers:
-- `Authorization: Bearer <inbound-token>`
+- `X-EZAIL-Authorization: Bearer <inbound-token>` (preferred) or `Authorization: Bearer <inbound-token>`
 - `Content-Type: application/json`
+
+Note: The server checks `X-EZAIL-Authorization` first, then falls back to `Authorization`.
 
 ### Outbound (POST to remote server)
 
@@ -116,6 +118,19 @@ curl http://localhost:5000/health
 ```
 
 ### Sending a Test Message
+
+```bash
+curl -X POST http://localhost:5000/ \
+  -H "X-EZAIL-Authorization: Bearer your-inbound-token" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "text": "Hello from webhook",
+    "from": "user-123",
+    "fromName": "Test User"
+  }'
+```
+
+Or using the standard Authorization header:
 
 ```bash
 curl -X POST http://localhost:5000/ \
