@@ -82,7 +82,7 @@
     },
     "entries": {
       "nano-banana-pro": {
-        "apiKey": "AIzaSyDJzhRMLcTeLaIwLzm4KLVCwjDGetpq33Y"
+        "apiKey": "${GEMINI_API_KEY}"
       }
     }
   },
