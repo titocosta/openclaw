@@ -59,7 +59,7 @@
     "mode": "local",
     "auth": {
       "mode": "token",
-      "token": "edd5e4e0b667bf89767359547ac2f910e1b1ed6ae3cd6b2d"
+      "token": "${GATEWAY_TOKEN}"
     },
     "port": 18789,
     "bind": "loopback",
