@@ -325,6 +325,7 @@ async function processInboundMessage(params: {
                 }),
                 to: from,
                 timestamp: Date.now(),
+                session: message.session,
               },
             });
             statusSink?.({ lastOutboundAt: Date.now() });
@@ -491,6 +492,7 @@ async function processInboundMessage(params: {
           config,
           statusSink,
           tokenTracker,
+          session: message.session,
         });
       },
       onError: (err, info) => {
@@ -523,8 +525,9 @@ async function deliverHttpWebhookReply(params: {
   config: OpenClawConfig;
   statusSink?: (patch: { lastInboundAt?: number; lastOutboundAt?: number }) => void;
   tokenTracker?: TokenTracker;
+  session?: Record<string, unknown>;
 }): Promise<void> {
-  const { payload, account, to, runtime, core, config, statusSink, tokenTracker } = params;
+  const { payload, account, to, runtime, core, config, statusSink, tokenTracker, session } = params;
   const { sendHttpWebhookMessage } = await import("./api.js");
 
   // Load current usage summary
@@ -575,6 +578,7 @@ async function deliverHttpWebhookReply(params: {
                 timestamp: Date.now(),
                 usage,
                 tokens,
+                session,
               },
             });
             statusSink?.({ lastOutboundAt: Date.now() });
@@ -592,6 +596,7 @@ async function deliverHttpWebhookReply(params: {
                   timestamp: Date.now(),
                   usage,
                   tokens,
+                  session,
                 },
               });
               statusSink?.({ lastOutboundAt: Date.now() });
@@ -627,6 +632,7 @@ async function deliverHttpWebhookReply(params: {
               timestamp: Date.now(),
               usage,
               tokens,
+              session,
             },
           });
           statusSink?.({ lastOutboundAt: Date.now() });
@@ -642,6 +648,7 @@ async function deliverHttpWebhookReply(params: {
                 timestamp: Date.now(),
                 usage,
                 tokens,
+                session,
               },
             });
             statusSink?.({ lastOutboundAt: Date.now() });
@@ -669,6 +676,7 @@ async function deliverHttpWebhookReply(params: {
             timestamp: Date.now(),
             usage,
             tokens,
+            session,
           },
         });
         statusSink?.({ lastOutboundAt: Date.now() });

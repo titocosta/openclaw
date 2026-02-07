@@ -52,6 +52,7 @@ export type HttpWebhookInboundMessage = {
   mediaUrl?: string;
   messageId?: string;
   timestamp?: number;
+  session?: Record<string, unknown>;  // Optional session object echoed back in responses
 } & (
   | { text: string; messages?: never }
   | { text?: never; messages: ModelMessage[] }
@@ -121,6 +122,7 @@ export type HttpWebhookOutboundMessage = {
   timestamp: number;
   usage?: UsageSummary;
   tokens?: TokenUsageData;
+  session?: Record<string, unknown>;  // Echoed from inbound request for session tracking
 };
 
 // API response from outbound webhook
