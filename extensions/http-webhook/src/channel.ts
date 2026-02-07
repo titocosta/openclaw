@@ -1,3 +1,6 @@
+import { readFile } from "node:fs/promises";
+import { extname } from "node:path";
+
 import {
   DEFAULT_ACCOUNT_ID,
   formatPairingApproveHint,
@@ -19,6 +22,56 @@ import { sendHttpWebhookMessage, probeHttpWebhook } from "./api.js";
 import { getHttpWebhookRuntime } from "./runtime.js";
 import { startHttpWebhookMonitor } from "./monitor.js";
 import { HttpWebhookConfigSchema } from "./types.config.js";
+
+/**
+ * Get MIME type from file extension
+ */
+function getMimeTypeFromExtension(filePath: string): string {
+  const ext = extname(filePath).toLowerCase();
+  const mimeTypes: Record<string, string> = {
+    // Images
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.png': 'image/png',
+    '.gif': 'image/gif',
+    '.webp': 'image/webp',
+    '.svg': 'image/svg+xml',
+    '.bmp': 'image/bmp',
+    // Documents
+    '.pdf': 'application/pdf',
+    '.doc': 'application/msword',
+    '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    '.xls': 'application/vnd.ms-excel',
+    '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    '.ppt': 'application/vnd.ms-powerpoint',
+    '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    // Text
+    '.txt': 'text/plain',
+    '.html': 'text/html',
+    '.htm': 'text/html',
+    '.css': 'text/css',
+    '.js': 'text/javascript',
+    '.json': 'application/json',
+    '.xml': 'application/xml',
+    '.csv': 'text/csv',
+    '.md': 'text/markdown',
+    // Audio
+    '.mp3': 'audio/mpeg',
+    '.wav': 'audio/wav',
+    '.ogg': 'audio/ogg',
+    '.m4a': 'audio/mp4',
+    // Video
+    '.mp4': 'video/mp4',
+    '.webm': 'video/webm',
+    '.avi': 'video/x-msvideo',
+    '.mov': 'video/quicktime',
+    // Archives
+    '.zip': 'application/zip',
+    '.tar': 'application/x-tar',
+    '.gz': 'application/gzip',
+  };
+  return mimeTypes[ext] || 'application/octet-stream';
+}
 
 const meta = getChatChannelMeta("http-webhook");
 
@@ -293,12 +346,38 @@ export const httpWebhookPlugin: ChannelPlugin<ResolvedHttpWebhookAccount> = {
         cfg: cfg as OpenClawConfig,
         accountId,
       });
+
+      // Convert media to base64
+      let base64Data: string;
+      let mediaType: string;
+      let filename: string;
+
+      const isRemoteUrl = mediaUrl.startsWith("http://") || mediaUrl.startsWith("https://");
+
+      if (isRemoteUrl) {
+        // Remote URL - fetch and convert to base64
+        const response = await fetch(mediaUrl);
+        if (!response.ok) {
+          throw new Error(`Failed to fetch media: ${response.status} ${response.statusText}`);
+        }
+        const arrayBuffer = await response.arrayBuffer();
+        base64Data = Buffer.from(arrayBuffer).toString("base64");
+        mediaType = response.headers.get("content-type") || getMimeTypeFromExtension(mediaUrl);
+        filename = mediaUrl.split("/").pop()?.split("?")[0] || "file";
+      } else {
+        // Local file - read and convert to base64
+        const fileBuffer = await readFile(mediaUrl);
+        base64Data = fileBuffer.toString("base64");
+        mediaType = getMimeTypeFromExtension(mediaUrl);
+        filename = mediaUrl.split("/").pop() || "file";
+      }
+
       const result = await sendHttpWebhookMessage({
         account,
         message: {
           text: text ?? "",
           to,
-          mediaUrl,
+          files: [{ data: base64Data, mediaType, filename }],
           timestamp: Date.now(),
         },
       });
