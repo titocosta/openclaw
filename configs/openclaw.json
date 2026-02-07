@@ -92,6 +92,9 @@
     "lastRunCommand": "onboard",
     "lastRunMode": "local"
   },
+  "diagnostics": {
+    "enabled": true
+  },
   "meta": {
     "lastTouchedVersion": "2026.2.3",
     "lastTouchedAt": "2026-02-04T12:42:34.153Z"
