@@ -319,7 +319,11 @@ export const httpWebhookPlugin: ChannelPlugin<ResolvedHttpWebhookAccount> = {
         ),
       };
     },
-    sendText: async ({ cfg, to, text, accountId }) => {
+    sendText: async (ctx) => {
+      const { cfg, to, text, accountId } = ctx;
+      // Accept session from context if available (for reply flows)
+      const session = (ctx as { session?: Record<string, unknown> }).session;
+
       const account = resolveHttpWebhookAccount({
         cfg: cfg as OpenClawConfig,
         accountId,
@@ -330,6 +334,8 @@ export const httpWebhookPlugin: ChannelPlugin<ResolvedHttpWebhookAccount> = {
           text,
           to,
           timestamp: Date.now(),
+          // Only include session if it was provided and is non-empty
+          ...(session && Object.keys(session).length > 0 ? { session } : {}),
         },
       });
       return {
@@ -338,7 +344,11 @@ export const httpWebhookPlugin: ChannelPlugin<ResolvedHttpWebhookAccount> = {
         chatId: to,
       };
     },
-    sendMedia: async ({ cfg, to, text, mediaUrl, accountId }) => {
+    sendMedia: async (ctx) => {
+      const { cfg, to, text, mediaUrl, accountId } = ctx;
+      // Accept session from context if available (for reply flows)
+      const session = (ctx as { session?: Record<string, unknown> }).session;
+
       if (!mediaUrl) {
         throw new Error("HTTP webhook mediaUrl is required.");
       }
@@ -379,6 +389,8 @@ export const httpWebhookPlugin: ChannelPlugin<ResolvedHttpWebhookAccount> = {
           to,
           files: [{ data: base64Data, mediaType, filename }],
           timestamp: Date.now(),
+          // Only include session if it was provided and is non-empty
+          ...(session && Object.keys(session).length > 0 ? { session } : {}),
         },
       });
       return {
