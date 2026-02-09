@@ -1,6 +1,5 @@
 import { readFile } from "node:fs/promises";
 import { extname } from "node:path";
-
 import {
   DEFAULT_ACCOUNT_ID,
   formatPairingApproveHint,
@@ -11,7 +10,6 @@ import {
   type ChannelPlugin,
   type OpenClawConfig,
 } from "openclaw/plugin-sdk";
-
 import {
   listHttpWebhookAccountIds,
   resolveDefaultHttpWebhookAccountId,
@@ -19,8 +17,8 @@ import {
   type ResolvedHttpWebhookAccount,
 } from "./accounts.js";
 import { sendHttpWebhookMessage, probeHttpWebhook } from "./api.js";
-import { getHttpWebhookRuntime } from "./runtime.js";
 import { startHttpWebhookMonitor } from "./monitor.js";
+import { getHttpWebhookRuntime } from "./runtime.js";
 import { HttpWebhookConfigSchema } from "./types.config.js";
 
 /**
@@ -30,47 +28,47 @@ function getMimeTypeFromExtension(filePath: string): string {
   const ext = extname(filePath).toLowerCase();
   const mimeTypes: Record<string, string> = {
     // Images
-    '.jpg': 'image/jpeg',
-    '.jpeg': 'image/jpeg',
-    '.png': 'image/png',
-    '.gif': 'image/gif',
-    '.webp': 'image/webp',
-    '.svg': 'image/svg+xml',
-    '.bmp': 'image/bmp',
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+    ".svg": "image/svg+xml",
+    ".bmp": "image/bmp",
     // Documents
-    '.pdf': 'application/pdf',
-    '.doc': 'application/msword',
-    '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    '.xls': 'application/vnd.ms-excel',
-    '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    '.ppt': 'application/vnd.ms-powerpoint',
-    '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    ".pdf": "application/pdf",
+    ".doc": "application/msword",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".xls": "application/vnd.ms-excel",
+    ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ".ppt": "application/vnd.ms-powerpoint",
+    ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
     // Text
-    '.txt': 'text/plain',
-    '.html': 'text/html',
-    '.htm': 'text/html',
-    '.css': 'text/css',
-    '.js': 'text/javascript',
-    '.json': 'application/json',
-    '.xml': 'application/xml',
-    '.csv': 'text/csv',
-    '.md': 'text/markdown',
+    ".txt": "text/plain",
+    ".html": "text/html",
+    ".htm": "text/html",
+    ".css": "text/css",
+    ".js": "text/javascript",
+    ".json": "application/json",
+    ".xml": "application/xml",
+    ".csv": "text/csv",
+    ".md": "text/markdown",
     // Audio
-    '.mp3': 'audio/mpeg',
-    '.wav': 'audio/wav',
-    '.ogg': 'audio/ogg',
-    '.m4a': 'audio/mp4',
+    ".mp3": "audio/mpeg",
+    ".wav": "audio/wav",
+    ".ogg": "audio/ogg",
+    ".m4a": "audio/mp4",
     // Video
-    '.mp4': 'video/mp4',
-    '.webm': 'video/webm',
-    '.avi': 'video/x-msvideo',
-    '.mov': 'video/quicktime',
+    ".mp4": "video/mp4",
+    ".webm": "video/webm",
+    ".avi": "video/x-msvideo",
+    ".mov": "video/quicktime",
     // Archives
-    '.zip': 'application/zip',
-    '.tar': 'application/x-tar',
-    '.gz': 'application/gzip',
+    ".zip": "application/zip",
+    ".tar": "application/x-tar",
+    ".gz": "application/gzip",
   };
-  return mimeTypes[ext] || 'application/octet-stream';
+  return mimeTypes[ext] || "application/octet-stream";
 }
 
 const meta = getChatChannelMeta("http-webhook");
@@ -150,10 +148,12 @@ export const httpWebhookPlugin: ChannelPlugin<ResolvedHttpWebhookAccount> = {
       credentialSource: account.credentialSource,
     }),
     resolveAllowFrom: ({ cfg, accountId }) =>
-      (resolveHttpWebhookAccount({
-        cfg: cfg as OpenClawConfig,
-        accountId,
-      }).config.dm?.allowFrom ?? []).map((entry) => String(entry)),
+      (
+        resolveHttpWebhookAccount({
+          cfg: cfg as OpenClawConfig,
+          accountId,
+        }).config.dm?.allowFrom ?? []
+      ).map((entry) => String(entry)),
     formatAllowFrom: ({ allowFrom }) =>
       allowFrom
         .map((entry) => String(entry))
@@ -266,9 +266,7 @@ export const httpWebhookPlugin: ChannelPlugin<ResolvedHttpWebhookAccount> = {
     applyAccountConfig: ({ cfg, input }) => {
       const inboundPort = input.inboundPort ? Number.parseInt(input.inboundPort, 10) : 5000;
       const inboundPath = input.inboundPath?.trim() || "/";
-      const timeoutSeconds = input.timeoutSeconds
-        ? Number.parseInt(input.timeoutSeconds, 10)
-        : 30;
+      const timeoutSeconds = input.timeoutSeconds ? Number.parseInt(input.timeoutSeconds, 10) : 30;
 
       return {
         ...cfg,
@@ -321,8 +319,10 @@ export const httpWebhookPlugin: ChannelPlugin<ResolvedHttpWebhookAccount> = {
     },
     sendText: async (ctx) => {
       const { cfg, to, text, accountId } = ctx;
-      // Accept session from context if available (for reply flows)
+      // Accept session, usage, and tokens from context if available (for reply flows)
       const session = (ctx as { session?: Record<string, unknown> }).session;
+      const usage = (ctx as { usage?: unknown }).usage;
+      const tokens = (ctx as { tokens?: unknown }).tokens;
 
       const account = resolveHttpWebhookAccount({
         cfg: cfg as OpenClawConfig,
@@ -334,8 +334,11 @@ export const httpWebhookPlugin: ChannelPlugin<ResolvedHttpWebhookAccount> = {
           text,
           to,
           timestamp: Date.now(),
-          // Only include session if it was provided and is non-empty
-          ...(session && Object.keys(session).length > 0 ? { session } : {}),
+          // Include session if provided (even if empty object)
+          ...(session !== undefined ? { session } : {}),
+          // Include usage and tokens if provided
+          ...(usage !== undefined ? { usage } : {}),
+          ...(tokens !== undefined ? { tokens } : {}),
         },
       });
       return {
@@ -346,8 +349,10 @@ export const httpWebhookPlugin: ChannelPlugin<ResolvedHttpWebhookAccount> = {
     },
     sendMedia: async (ctx) => {
       const { cfg, to, text, mediaUrl, accountId } = ctx;
-      // Accept session from context if available (for reply flows)
+      // Accept session, usage, and tokens from context if available (for reply flows)
       const session = (ctx as { session?: Record<string, unknown> }).session;
+      const usage = (ctx as { usage?: unknown }).usage;
+      const tokens = (ctx as { tokens?: unknown }).tokens;
 
       if (!mediaUrl) {
         throw new Error("HTTP webhook mediaUrl is required.");
@@ -389,8 +394,11 @@ export const httpWebhookPlugin: ChannelPlugin<ResolvedHttpWebhookAccount> = {
           to,
           files: [{ data: base64Data, mediaType, filename }],
           timestamp: Date.now(),
-          // Only include session if it was provided and is non-empty
-          ...(session && Object.keys(session).length > 0 ? { session } : {}),
+          // Include session if provided (even if empty object)
+          ...(session !== undefined ? { session } : {}),
+          // Include usage and tokens if provided
+          ...(usage !== undefined ? { usage } : {}),
+          ...(tokens !== undefined ? { tokens } : {}),
         },
       });
       return {
