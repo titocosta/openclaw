@@ -1,11 +1,21 @@
 import { z } from "zod";
 
+// Proxy configuration for reverse proxy mode
+export const HttpWebhookProxySchema = z
+  .object({
+    enabled: z.boolean().optional().default(false),
+    target: z.string().url().optional(), // e.g., "http://127.0.0.1:3000"
+    timeout: z.number().int().positive().optional().default(30000),
+  })
+  .strict();
+
 // Inbound configuration (HTTP server receiving webhooks)
 export const HttpWebhookInboundSchema = z
   .object({
     port: z.number().int().min(1).max(65535).optional().default(5000),
     path: z.string().optional().default("/"),
     token: z.string().optional(),
+    proxy: HttpWebhookProxySchema.optional(),
   })
   .strict();
 
@@ -54,6 +64,7 @@ export const HttpWebhookAccountSchema = z
 export const HttpWebhookConfigSchema = HttpWebhookAccountSchema;
 
 // TypeScript types derived from schemas
+export type HttpWebhookProxyConfig = z.infer<typeof HttpWebhookProxySchema>;
 export type HttpWebhookInboundConfig = z.infer<typeof HttpWebhookInboundSchema>;
 export type HttpWebhookOutboundConfig = z.infer<typeof HttpWebhookOutboundSchema>;
 export type HttpWebhookDmConfig = z.infer<typeof HttpWebhookDmSchema>;

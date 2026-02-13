@@ -1,12 +1,12 @@
-import { createServer } from "node:http";
 import type { IncomingMessage, ServerResponse } from "node:http";
+import type { OpenClawConfig } from "openclaw/plugin-sdk";
 import { timingSafeEqual } from "node:crypto";
 import { readFile } from "node:fs/promises";
+import { createServer, request as httpRequest } from "node:http";
+import { request as httpsRequest } from "node:https";
 import { extname } from "node:path";
-
-import type { OpenClawConfig } from "openclaw/plugin-sdk";
-
 import type { ResolvedHttpWebhookAccount } from "./accounts.js";
+import type { HttpWebhookProxyConfig } from "./types.config.js";
 import type {
   HttpWebhookInboundMessage,
   UsageSummary,
@@ -41,47 +41,47 @@ function getMimeTypeFromExtension(filePath: string): string {
   const ext = extname(filePath).toLowerCase();
   const mimeTypes: Record<string, string> = {
     // Images
-    '.jpg': 'image/jpeg',
-    '.jpeg': 'image/jpeg',
-    '.png': 'image/png',
-    '.gif': 'image/gif',
-    '.webp': 'image/webp',
-    '.svg': 'image/svg+xml',
-    '.bmp': 'image/bmp',
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+    ".svg": "image/svg+xml",
+    ".bmp": "image/bmp",
     // Documents
-    '.pdf': 'application/pdf',
-    '.doc': 'application/msword',
-    '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    '.xls': 'application/vnd.ms-excel',
-    '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    '.ppt': 'application/vnd.ms-powerpoint',
-    '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    ".pdf": "application/pdf",
+    ".doc": "application/msword",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".xls": "application/vnd.ms-excel",
+    ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ".ppt": "application/vnd.ms-powerpoint",
+    ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
     // Text
-    '.txt': 'text/plain',
-    '.html': 'text/html',
-    '.htm': 'text/html',
-    '.css': 'text/css',
-    '.js': 'text/javascript',
-    '.json': 'application/json',
-    '.xml': 'application/xml',
-    '.csv': 'text/csv',
-    '.md': 'text/markdown',
+    ".txt": "text/plain",
+    ".html": "text/html",
+    ".htm": "text/html",
+    ".css": "text/css",
+    ".js": "text/javascript",
+    ".json": "application/json",
+    ".xml": "application/xml",
+    ".csv": "text/csv",
+    ".md": "text/markdown",
     // Audio
-    '.mp3': 'audio/mpeg',
-    '.wav': 'audio/wav',
-    '.ogg': 'audio/ogg',
-    '.m4a': 'audio/mp4',
+    ".mp3": "audio/mpeg",
+    ".wav": "audio/wav",
+    ".ogg": "audio/ogg",
+    ".m4a": "audio/mp4",
     // Video
-    '.mp4': 'video/mp4',
-    '.webm': 'video/webm',
-    '.avi': 'video/x-msvideo',
-    '.mov': 'video/quicktime',
+    ".mp4": "video/mp4",
+    ".webm": "video/webm",
+    ".avi": "video/x-msvideo",
+    ".mov": "video/quicktime",
     // Archives
-    '.zip': 'application/zip',
-    '.tar': 'application/x-tar',
-    '.gz': 'application/gzip',
+    ".zip": "application/zip",
+    ".tar": "application/x-tar",
+    ".gz": "application/gzip",
   };
-  return mimeTypes[ext] || 'application/octet-stream';
+  return mimeTypes[ext] || "application/octet-stream";
 }
 
 function normalizeWebhookPath(raw: string): string {
@@ -247,6 +247,114 @@ function extractMediaFromPart(
     return { data: base64, mediaType };
   }
   return null;
+}
+
+// Hop-by-hop headers that should not be forwarded
+const HOP_BY_HOP_HEADERS = new Set([
+  "connection",
+  "keep-alive",
+  "proxy-authenticate",
+  "proxy-authorization",
+  "te",
+  "trailer",
+  "transfer-encoding",
+  "upgrade",
+]);
+
+/**
+ * Proxy a request to a target server using Node.js built-in http/https modules.
+ * Streams the request body and response body without buffering.
+ */
+function proxyRequest(
+  req: IncomingMessage,
+  res: ServerResponse,
+  targetUrl: string,
+  timeout: number,
+  runtime: HttpWebhookRuntimeEnv,
+  pathOverride?: string,
+): void {
+  const target = new URL(targetUrl);
+  const isHttps = target.protocol === "https:";
+  const requestFn = isHttps ? httpsRequest : httpRequest;
+
+  // Build target URL with original path and query string
+  const originalUrl = new URL(req.url ?? "/", `http://${req.headers.host}`);
+  const proxyPath = pathOverride
+    ? pathOverride + originalUrl.search
+    : originalUrl.pathname + originalUrl.search;
+
+  // Build headers, filtering hop-by-hop and adding X-Forwarded-*
+  const headers: Record<string, string | string[]> = {};
+  for (const [key, value] of Object.entries(req.headers)) {
+    if (value && !HOP_BY_HOP_HEADERS.has(key.toLowerCase())) {
+      headers[key] = value;
+    }
+  }
+
+  // Add X-Forwarded-* headers
+  const clientIp = req.socket.remoteAddress ?? "unknown";
+  headers["x-forwarded-for"] = req.headers["x-forwarded-for"]
+    ? `${req.headers["x-forwarded-for"]}, ${clientIp}`
+    : clientIp;
+  headers["x-forwarded-proto"] = req.headers["x-forwarded-proto"] ?? "http";
+  headers["x-forwarded-host"] = req.headers["x-forwarded-host"] ?? req.headers.host ?? "";
+
+  // Update Host header to target
+  headers["host"] = target.host;
+
+  const proxyReq = requestFn(
+    {
+      hostname: target.hostname,
+      port: target.port || (isHttps ? 443 : 80),
+      path: proxyPath,
+      method: req.method,
+      headers,
+      timeout,
+    },
+    (proxyRes) => {
+      // Copy response headers, filtering hop-by-hop
+      const responseHeaders: Record<string, string | string[]> = {};
+      for (const [key, value] of Object.entries(proxyRes.headers)) {
+        if (value && !HOP_BY_HOP_HEADERS.has(key.toLowerCase())) {
+          responseHeaders[key] = value;
+        }
+      }
+
+      res.writeHead(proxyRes.statusCode ?? 502, responseHeaders);
+      proxyRes.pipe(res);
+    },
+  );
+
+  // Handle proxy request errors
+  proxyReq.on("error", (err) => {
+    runtime.error?.(`[http-webhook] Proxy error: ${err.message}`);
+    if (!res.headersSent) {
+      res.writeHead(502, { "Content-Type": "text/plain" });
+      res.end("Bad Gateway");
+    } else {
+      res.end();
+    }
+  });
+
+  // Handle timeout
+  proxyReq.on("timeout", () => {
+    runtime.error?.(`[http-webhook] Proxy timeout after ${timeout}ms`);
+    proxyReq.destroy();
+    if (!res.headersSent) {
+      res.writeHead(504, { "Content-Type": "text/plain" });
+      res.end("Gateway Timeout");
+    } else {
+      res.end();
+    }
+  });
+
+  // Handle client disconnect
+  req.on("close", () => {
+    proxyReq.destroy();
+  });
+
+  // Stream request body to proxy target
+  req.pipe(proxyReq);
 }
 
 async function processInboundMessage(params: {
@@ -553,28 +661,32 @@ async function deliverHttpWebhookReply(params: {
 
       try {
         // Check if it's a remote URL (http/https) or local file path
-        const isRemoteUrl = mediaUrl.startsWith('http://') || mediaUrl.startsWith('https://');
+        const isRemoteUrl = mediaUrl.startsWith("http://") || mediaUrl.startsWith("https://");
 
         if (!isRemoteUrl) {
           // Local file path - read the file and send as base64
           try {
             const fileBuffer = await readFile(mediaUrl);
-            const base64Data = fileBuffer.toString('base64');
+            const base64Data = fileBuffer.toString("base64");
             const mediaType = getMimeTypeFromExtension(mediaUrl);
-            const filename = mediaUrl.split('/').pop() || 'file';
+            const filename = mediaUrl.split("/").pop() || "file";
 
-            runtime.log?.(`HTTP webhook: sending local file "${mediaUrl}" as base64 (${fileBuffer.length} bytes, ${mediaType})`);
+            runtime.log?.(
+              `HTTP webhook: sending local file "${mediaUrl}" as base64 (${fileBuffer.length} bytes, ${mediaType})`,
+            );
 
             await sendHttpWebhookMessage({
               account,
               message: {
                 text: payload.text || "",
                 to,
-                files: [{
-                  data: base64Data,
-                  mediaType,
-                  filename,
-                }],
+                files: [
+                  {
+                    data: base64Data,
+                    mediaType,
+                    filename,
+                  },
+                ],
                 timestamp: Date.now(),
                 usage,
                 tokens,
@@ -584,7 +696,7 @@ async function deliverHttpWebhookReply(params: {
             statusSink?.({ lastOutboundAt: Date.now() });
           } catch (fileErr) {
             runtime.error?.(
-              `HTTP webhook: failed to read local file "${mediaUrl}": ${String(fileErr)}`
+              `HTTP webhook: failed to read local file "${mediaUrl}": ${String(fileErr)}`,
             );
             // Send text-only message as fallback
             if (payload.text) {
@@ -613,22 +725,27 @@ async function deliverHttpWebhookReply(params: {
             throw new Error(`Failed to fetch: ${response.status} ${response.statusText}`);
           }
           const arrayBuffer = await response.arrayBuffer();
-          const base64Data = Buffer.from(arrayBuffer).toString('base64');
-          const contentType = response.headers.get('content-type') || getMimeTypeFromExtension(mediaUrl);
-          const filename = mediaUrl.split('/').pop()?.split('?')[0] || 'file';
+          const base64Data = Buffer.from(arrayBuffer).toString("base64");
+          const contentType =
+            response.headers.get("content-type") || getMimeTypeFromExtension(mediaUrl);
+          const filename = mediaUrl.split("/").pop()?.split("?")[0] || "file";
 
-          runtime.log?.(`HTTP webhook: sending remote file as base64 (${arrayBuffer.byteLength} bytes, ${contentType})`);
+          runtime.log?.(
+            `HTTP webhook: sending remote file as base64 (${arrayBuffer.byteLength} bytes, ${contentType})`,
+          );
 
           await sendHttpWebhookMessage({
             account,
             message: {
               text: payload.text || "",
               to,
-              files: [{
-                data: base64Data,
-                mediaType: contentType,
-                filename,
-              }],
+              files: [
+                {
+                  data: base64Data,
+                  mediaType: contentType,
+                  filename,
+                },
+              ],
               timestamp: Date.now(),
               usage,
               tokens,
@@ -637,7 +754,9 @@ async function deliverHttpWebhookReply(params: {
           });
           statusSink?.({ lastOutboundAt: Date.now() });
         } catch (fetchErr) {
-          runtime.error?.(`HTTP webhook: failed to download remote URL "${mediaUrl}": ${String(fetchErr)}`);
+          runtime.error?.(
+            `HTTP webhook: failed to download remote URL "${mediaUrl}": ${String(fetchErr)}`,
+          );
           // Send text-only message as fallback
           if (payload.text) {
             await sendHttpWebhookMessage({
@@ -700,12 +819,17 @@ export async function startHttpWebhookMonitor(
   }
 
   const port = inbound.port ?? 5000;
-  const path = normalizeWebhookPath(inbound.path ?? "/");
+  const webhookPath = normalizeWebhookPath(inbound.path ?? "/");
   const token = inbound.token;
   const healthPath = "/health";
+  const proxyConfig: HttpWebhookProxyConfig | undefined = inbound.proxy;
 
   // Create and initialize token tracker
-  const stateDir = config.stateDir ?? process.env.OPENCLAW_STATE_DIR ?? process.env.CLAWDBOT_STATE_DIR ?? process.env.HOME + "/.openclaw";
+  const stateDir =
+    config.stateDir ??
+    process.env.OPENCLAW_STATE_DIR ??
+    process.env.CLAWDBOT_STATE_DIR ??
+    process.env.HOME + "/.openclaw";
   const tokenDataPath = `${stateDir}/http-webhook-tokens.json`;
   const tokenTracker = new TokenTracker({
     dataPath: tokenDataPath,
@@ -723,85 +847,129 @@ export async function startHttpWebhookMonitor(
   runtime.log?.(`[${account.accountId}] Token tracker started`);
 
   const server = createServer((req: IncomingMessage, res: ServerResponse) => {
-    // Health check
-    if (req.url === healthPath) {
+    // Parse URL to get pathname
+    const parsedUrl = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
+    const pathname = parsedUrl.pathname;
+
+    // Health check - always handled locally
+    if (pathname === healthPath) {
       res.writeHead(200);
       res.end("ok");
       return;
     }
 
-    // Webhook handler
-    if (req.url !== path) {
-      res.writeHead(404);
-      res.end("Not Found");
-      return;
-    }
+    // Webhook path - handle locally (exact match or prefix match for sub-paths)
+    const isWebhookPath = pathname === webhookPath || pathname.startsWith(`${webhookPath}/`);
 
-    if (req.method !== "POST") {
-      res.writeHead(405, { "Allow": "POST" });
-      res.end("Method Not Allowed");
-      return;
-    }
-
-    // Validate bearer token (check X-EZAIL-Authorization first, then fall back to Authorization)
-    const ezailAuthHeader = req.headers["x-ezail-authorization"] as string | undefined;
-    const authHeader = ezailAuthHeader ?? req.headers.authorization;
-    if (!validateBearerToken(authHeader, token)) {
-      res.writeHead(401);
-      res.end("Unauthorized");
-      return;
-    }
-
-    // Parse JSON body
-    void readJsonBody(req, 1024 * 1024).then(async (body) => {
-      if (!body.ok) {
-        res.statusCode = body.error === "payload too large" ? 413 : 400;
-        res.end(body.error ?? "Invalid payload");
+    if (isWebhookPath) {
+      if (req.method !== "POST") {
+        res.writeHead(405, { Allow: "POST" });
+        res.end("Method Not Allowed");
         return;
       }
 
-      const rawMessage = body.value as Record<string, unknown>;
-      if (!rawMessage || typeof rawMessage !== "object" || !rawMessage.from) {
-        res.statusCode = 400;
-        res.end("Invalid message format: missing 'from' field");
+      // Validate bearer token (check X-EZAIL-Authorization first, then fall back to Authorization)
+      const ezailAuthHeader = req.headers["x-ezail-authorization"] as string | undefined;
+      const authHeader = ezailAuthHeader ?? req.headers.authorization;
+      if (!validateBearerToken(authHeader, token)) {
+        res.writeHead(401);
+        res.end("Unauthorized");
         return;
       }
 
-      // Validate that either 'text' or 'messages' is provided
-      const hasText = typeof rawMessage.text === "string" && rawMessage.text.trim().length > 0;
-      const hasMessages = Array.isArray(rawMessage.messages) && rawMessage.messages.length > 0;
+      // Parse JSON body
+      void readJsonBody(req, 1024 * 1024).then(async (body) => {
+        if (!body.ok) {
+          res.statusCode = body.error === "payload too large" ? 413 : 400;
+          res.end(body.error ?? "Invalid payload");
+          return;
+        }
 
-      if (!hasText && !hasMessages) {
-        res.statusCode = 400;
-        res.end("Invalid message format: must provide either 'text' or 'messages' array");
-        return;
-      }
+        const rawMessage = body.value as Record<string, unknown>;
+        if (!rawMessage || typeof rawMessage !== "object" || !rawMessage.from) {
+          res.statusCode = 400;
+          res.end("Invalid message format: missing 'from' field");
+          return;
+        }
 
-      const message = rawMessage as HttpWebhookInboundMessage;
+        // Validate that either 'text' or 'messages' is provided
+        const hasText = typeof rawMessage.text === "string" && rawMessage.text.trim().length > 0;
+        const hasMessages = Array.isArray(rawMessage.messages) && rawMessage.messages.length > 0;
 
-      statusSink?.({ lastInboundAt: Date.now() });
+        if (!hasText && !hasMessages) {
+          res.statusCode = 400;
+          res.end("Invalid message format: must provide either 'text' or 'messages' array");
+          return;
+        }
 
-      // Return 200 immediately, process async
-      res.writeHead(200);
-      res.end("OK");
+        const message = rawMessage as HttpWebhookInboundMessage;
 
-      // Process message asynchronously
-      processInboundMessage({
-        message,
-        account,
-        config,
-        runtime,
-        core,
-        statusSink,
-        tokenTracker,
-      }).catch((err) => {
-        runtime.error?.(`[${account.accountId}] HTTP webhook processing failed: ${String(err)}`);
+        statusSink?.({ lastInboundAt: Date.now() });
+
+        // Return 200 immediately, process async
+        res.writeHead(200);
+        res.end("OK");
+
+        // Process message asynchronously
+        processInboundMessage({
+          message,
+          account,
+          config,
+          runtime,
+          core,
+          statusSink,
+          tokenTracker,
+        }).catch((err) => {
+          runtime.error?.(`[${account.accountId}] HTTP webhook processing failed: ${String(err)}`);
+        });
       });
-    });
+      return;
+    }
+
+    // Web apps reverse proxy: /webapps/{appname}/* → localhost:{port}/*
+    const webappMatch = pathname.match(/^\/webapps\/([a-zA-Z0-9_-]+)(\/.*)?$/);
+    if (webappMatch) {
+      const appName = webappMatch[1];
+      const subPath = webappMatch[2] || "/";
+      const portFile = `/home/sprite/webapps/${appName}/.port`;
+
+      void readFile(portFile, "utf-8")
+        .then((portContent) => {
+          const appPort = parseInt(portContent.trim(), 10);
+          if (isNaN(appPort) || appPort < 1 || appPort > 65535) {
+            res.writeHead(502);
+            res.end("Invalid port configuration");
+            return;
+          }
+          proxyRequest(
+            req,
+            res,
+            `http://127.0.0.1:${appPort}`,
+            proxyConfig?.timeout ?? 30000,
+            runtime,
+            subPath,
+          );
+        })
+        .catch(() => {
+          res.writeHead(404);
+          res.end("App not found");
+        });
+      return;
+    }
+
+    // Proxy to target if configured
+    if (proxyConfig?.enabled && proxyConfig.target) {
+      proxyRequest(req, res, proxyConfig.target, proxyConfig.timeout ?? 30000, runtime);
+      return;
+    }
+
+    // No matching route
+    res.writeHead(404);
+    res.end("Not Found");
   });
 
   await new Promise<void>((resolve) => server.listen(port, "0.0.0.0", resolve));
-  runtime.log?.(`[${account.accountId}] HTTP webhook listening on port ${port}${path}`);
+  runtime.log?.(`[${account.accountId}] HTTP webhook listening on port ${port}${webhookPath}`);
 
   const shutdown = () => {
     tokenTracker.stop();
