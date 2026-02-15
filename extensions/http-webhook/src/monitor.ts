@@ -933,11 +933,11 @@ export async function startHttpWebhookMonitor(
       return;
     }
 
-    // Web apps reverse proxy: /webapps/{appname}/* → localhost:{port}/*
+    // Web apps reverse proxy: /webapps/{appname}/* → localhost:{port}/webapps/{appname}/*
+    // Preserves full path so Next.js basePath works correctly
     const webappMatch = pathname.match(/^\/webapps\/([a-zA-Z0-9_-]+)(\/.*)?$/);
     if (webappMatch) {
       const appName = webappMatch[1];
-      const subPath = webappMatch[2] || "/";
       const portFile = `/home/sprite/webapps/${appName}/.port`;
 
       void readFile(portFile, "utf-8")
@@ -948,13 +948,14 @@ export async function startHttpWebhookMonitor(
             res.end("Invalid port configuration");
             return;
           }
+          // Forward the full pathname to preserve basePath for frameworks like Next.js
           proxyRequest(
             req,
             res,
             `http://localhost:${appPort}`,
             proxyConfig?.timeout ?? 30000,
             runtime,
-            subPath,
+            pathname,
           );
         })
         .catch(() => {
