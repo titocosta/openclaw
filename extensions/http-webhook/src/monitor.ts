@@ -933,33 +933,43 @@ export async function startHttpWebhookMonitor(
       return;
     }
 
-    // Web apps reverse proxy: /{prefix}/{appname}/* → localhost:{port}/webapps/{appname}/*
+    // Web apps reverse proxy: /{prefix}/{appname}/* → localhost:{port}/{basepath}/*
     // Matches both /webapps/{appname} and /{userId}/{appname} patterns
-    // Normalizes all requests to /webapps/{appname}/* for consistent Next.js basePath
+    // Uses .basepath file if present, otherwise defaults to /webapps/{appname}
     const webappMatch = pathname.match(/^\/([a-zA-Z0-9_-]+)\/([a-zA-Z0-9_-]+)(\/.*)?$/);
     if (webappMatch) {
       const appName = webappMatch[2];
       const subPath = webappMatch[3] || "";
       const portFile = `/home/sprite/webapps/${appName}/.port`;
+      const basepathFile = `/home/sprite/webapps/${appName}/.basepath`;
 
       // Check if this is actually a webapp by trying to read the .port file
       readFile(portFile, "utf-8")
-        .then((portContent) => {
+        .then(async (portContent) => {
           const appPort = parseInt(portContent.trim(), 10);
           if (isNaN(appPort) || appPort < 1 || appPort > 65535) {
             res.writeHead(502);
             res.end("Invalid port configuration");
             return;
           }
-          // Normalize path to /webapps/{appname}/* regardless of incoming prefix
-          const normalizedPath = `/webapps/${appName}${subPath}`;
+          // Read external basepath if configured, otherwise use /webapps/{appname}
+          let basePath = `/webapps/${appName}`;
+          try {
+            const customBasePath = await readFile(basepathFile, "utf-8");
+            if (customBasePath.trim()) {
+              basePath = customBasePath.trim();
+            }
+          } catch {
+            // No .basepath file, use default
+          }
+          const proxyPath = `${basePath}${subPath}`;
           proxyRequest(
             req,
             res,
             `http://localhost:${appPort}`,
             proxyConfig?.timeout ?? 30000,
             runtime,
-            normalizedPath,
+            proxyPath,
           );
         })
         .catch(() => {
