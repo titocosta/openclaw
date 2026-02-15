@@ -18,7 +18,11 @@
       "workspace": "/home/sprite/.openclaw/workspace",
       "model": {
         "primary": "google/gemini-3-flash",
-	"fallbacks": ["openrouter/moonshotai/kimi-k2.5", "openrouter/z-ai/glm-4.7", "google/gemini-2.5-flash"]
+        "fallbacks": [
+          "openrouter/moonshotai/kimi-k2.5",
+          "openrouter/z-ai/glm-4.7",
+          "google/gemini-2.5-flash"
+        ]
       }
     }
   },
@@ -33,7 +37,7 @@
       "enabled": true,
       "inbound": {
         "port": 8080,
-        "path": "/",
+        "path": "/openclaw",
         "token": "${HTTP_WEBHOOK_INBOUND_TOKEN}"
       },
       "outbound": {
