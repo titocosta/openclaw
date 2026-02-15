@@ -933,14 +933,17 @@ export async function startHttpWebhookMonitor(
       return;
     }
 
-    // Web apps reverse proxy: /webapps/{appname}/* → localhost:{port}/webapps/{appname}/*
-    // Preserves full path so Next.js basePath works correctly
-    const webappMatch = pathname.match(/^\/webapps\/([a-zA-Z0-9_-]+)(\/.*)?$/);
+    // Web apps reverse proxy: /{prefix}/{appname}/* → localhost:{port}/webapps/{appname}/*
+    // Matches both /webapps/{appname} and /{userId}/{appname} patterns
+    // Normalizes all requests to /webapps/{appname}/* for consistent Next.js basePath
+    const webappMatch = pathname.match(/^\/([a-zA-Z0-9_-]+)\/([a-zA-Z0-9_-]+)(\/.*)?$/);
     if (webappMatch) {
-      const appName = webappMatch[1];
+      const appName = webappMatch[2];
+      const subPath = webappMatch[3] || "";
       const portFile = `/home/sprite/webapps/${appName}/.port`;
 
-      void readFile(portFile, "utf-8")
+      // Check if this is actually a webapp by trying to read the .port file
+      readFile(portFile, "utf-8")
         .then((portContent) => {
           const appPort = parseInt(portContent.trim(), 10);
           if (isNaN(appPort) || appPort < 1 || appPort > 65535) {
@@ -948,19 +951,25 @@ export async function startHttpWebhookMonitor(
             res.end("Invalid port configuration");
             return;
           }
-          // Forward the full pathname to preserve basePath for frameworks like Next.js
+          // Normalize path to /webapps/{appname}/* regardless of incoming prefix
+          const normalizedPath = `/webapps/${appName}${subPath}`;
           proxyRequest(
             req,
             res,
             `http://localhost:${appPort}`,
             proxyConfig?.timeout ?? 30000,
             runtime,
-            pathname,
+            normalizedPath,
           );
         })
         .catch(() => {
-          res.writeHead(404);
-          res.end("App not found");
+          // Not a webapp - check if there's a general proxy configured
+          if (proxyConfig?.enabled && proxyConfig.target) {
+            proxyRequest(req, res, proxyConfig.target, proxyConfig.timeout ?? 30000, runtime);
+          } else {
+            res.writeHead(404);
+            res.end("Not Found");
+          }
         });
       return;
     }
