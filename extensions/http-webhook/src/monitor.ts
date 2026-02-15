@@ -944,7 +944,7 @@ export async function startHttpWebhookMonitor(
           proxyRequest(
             req,
             res,
-            `http://127.0.0.1:${appPort}`,
+            `http://localhost:${appPort}`,
             proxyConfig?.timeout ?? 30000,
             runtime,
             subPath,
