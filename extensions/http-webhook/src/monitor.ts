@@ -353,8 +353,15 @@ function proxyRequest(
     proxyReq.destroy();
   });
 
-  // Stream request body to proxy target
-  req.pipe(proxyReq);
+  // Stream request body to proxy target, or end immediately for bodyless methods
+  const hasBody =
+    req.headers["content-length"] !== undefined || req.headers["transfer-encoding"] !== undefined;
+
+  if (hasBody) {
+    req.pipe(proxyReq);
+  } else {
+    proxyReq.end();
+  }
 }
 
 async function processInboundMessage(params: {
